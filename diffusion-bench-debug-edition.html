@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diffusion Bench — 1-D Mass Transfer Simulator</title>
+<style>
+  :root{
+    --bg: #EAEFEC;
+    --grid-line: rgba(20,50,44,0.06);
+    --panel-bg: #FCFDFC;
+    --panel-border: #D2DBD6;
+    --ink: #16221E;
+    --ink-soft: #52625C;
+    --ink-faint: #8A9A93;
+    --fluid1: #0E7C86;
+    --fluid2: #C97A2B;
+    --lcd-bg: #10201D;
+    --lcd-fg: #CDE9E3;
+    --radius-rail: 8px;
+    --radius-ampoule: 46px;
+    --font-display: "Avenir Next", "Century Gothic", Futura, "Trebuchet MS", sans-serif;
+    --font-body: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, monospace;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html,body{
+    margin:0; padding:0;
+    background:
+      repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 28px),
+      repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 28px),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page{ max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  .hero{ padding: 18px 4px 26px; border-bottom: 1px solid var(--panel-border); margin-bottom: 26px; }
+  .hero h1{
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    font-size: clamp(32px, 5vw, 46px);
+    margin: 0 0 8px 0;
+    color: var(--ink);
+  }
+  .hero .tagline{
+    font-size: 17px;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 62ch;
+    line-height: 1.5;
+  }
+  .hero .tagline em{ font-style: normal; color: var(--fluid1); border-bottom: 1px solid color-mix(in srgb, var(--fluid1) 40%, transparent); }
+  .hero .tagline .f2{ color: var(--fluid2); border-bottom: 1px solid color-mix(in srgb, var(--fluid2) 40%, transparent); }
+
+  .workbench{
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 22px;
+    align-items: start;
+  }
+  @media (max-width: 880px){
+    .workbench{ grid-template-columns: 1fr; }
+  }
+
+  /* ---- control rail ---- */
+  .rail{
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-rail);
+    padding: 18px 18px 20px;
+  }
+  .rail-group{ margin-bottom: 18px; }
+  .rail-group:last-of-type{ margin-bottom: 10px; }
+  .rail-group > .group-label{
+    display:block;
+    font-family: var(--font-display);
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+  }
+  select, input[type=number]{
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 7px 8px;
+    width: 100%;
+  }
+  select:focus, input:focus{ outline: 2px solid color-mix(in srgb, var(--fluid1) 55%, transparent); outline-offset: 1px; }
+  .field-row{ display:flex; gap: 8px; }
+  .field{ flex:1; min-width:0; }
+  .field label.mini{ display:block; font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
+  .dcoef{
+    margin-top: 9px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--fluid1) 8%, white);
+    border: 1px dashed color-mix(in srgb, var(--fluid1) 40%, var(--panel-border));
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.5;
+  }
+  .colorfield{ display:flex; align-items:center; gap:8px; flex:1; }
+  .colorfield input[type=color]{ width: 34px; height: 30px; padding: 2px; border-radius: 6px; border:1px solid var(--panel-border); background:#fff; }
+  .colorfield span{ font-size: 13px; color: var(--ink-soft); }
+
+  .rail-actions{ display:flex; flex-direction:column; gap:8px; margin-top: 6px; }
+  button{
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.01em;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.05s ease, filter 0.15s ease;
+  }
+  button:active{ transform: translateY(1px); }
+  #startBtn{ background: var(--ink); color: #fff; }
+  #startBtn:hover{ filter: brightness(1.15); }
+  #pauseBtn{ background: #fff; color: var(--ink); border-color: var(--panel-border); }
+  #pauseBtn:hover{ background: #f2f4f3; }
+  #pauseBtn:disabled, #startBtn:disabled{ opacity: 0.45; cursor: not-allowed; }
+  #steadyBtn{ background: #fff; color: var(--ink-soft); border-color: var(--panel-border); font-weight: 600; font-size: 13px; }
+  #steadyBtn:hover{ background: #f2f4f3; }
+
+  .speed-row{ display:flex; align-items:center; gap: 10px; margin-top: 14px; }
+  .speed-row label{ font-size: 12.5px; color: var(--ink-soft); font-family: var(--font-display); font-weight: 700; }
+  .speed-row select{ flex:1; }
+
+  .rail-note{ font-size: 12px; color: var(--ink-faint); margin-top: 12px; line-height: 1.5; }
+
+  /* ---- stage ---- */
+  .stage{ display:flex; flex-direction: column; gap: 18px; }
+
+  .ampoule-wrap{
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 20px 22px 16px;
+  }
+  .ampoule-title{ font-family: var(--font-display); font-weight:700; font-size: 14px; color: var(--ink-soft); margin: 0 0 12px 0; }
+  .ampoule-shell{
+    position: relative;
+    border-radius: var(--radius-ampoule);
+    padding: 5px;
+    background: linear-gradient(180deg, #d7dedb, #eef1ef);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.12), 0 1px 0 rgba(255,255,255,0.6);
+  }
+  #tubeCanvas{
+    display:block;
+    width: 100%;
+    height: 84px;
+    border-radius: calc(var(--radius-ampoule) - 5px);
+    box-shadow: inset 0 3px 10px rgba(0,0,0,0.18);
+  }
+  .ampoule-labels{ display:flex; justify-content: space-between; margin-top: 10px; font-size: 13px; font-weight: 600; }
+
+  .chart-wrap{
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px 8px;
+  }
+  .chart-title{ font-family: var(--font-display); font-weight:700; font-size: 14px; color: var(--ink-soft); margin: 0 0 6px 0; }
+  #chartCanvas{ display:block; width: 100%; height: 300px; }
+
+  /* ---- LCD readout ---- */
+  .lcd{
+    background: var(--lcd-bg);
+    border-radius: 14px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 14px 18px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), inset 0 2px 10px rgba(0,0,0,0.35);
+  }
+  .lcd-item{ display:flex; flex-direction:column; gap: 3px; }
+  .lcd-label{
+    font-family: var(--font-display);
+    font-size: 10.5px;
+    color: rgba(205,233,227,0.55);
+    letter-spacing: 0.03em;
+  }
+  .lcd-value{
+    font-family: var(--font-mono);
+    font-size: 16.5px;
+    color: var(--lcd-fg);
+    text-shadow: 0 0 8px rgba(79,224,199,0.25);
+    white-space: nowrap;
+  }
+
+  .note{
+    border: 1px dashed var(--panel-border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    background: color-mix(in srgb, var(--panel-bg) 60%, transparent);
+  }
+  .note strong{ color: var(--ink); font-family: var(--font-display); font-size: 13.5px; letter-spacing: 0.01em; }
+  .note .formula{ font-family: var(--font-mono); font-size: 13.5px; color: var(--ink); display:block; margin: 6px 0; }
+
+  .debug-tag{
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: #A6432A;
+    background: #F7E3DD;
+    border: 1px solid #E3AE9E;
+    border-radius: 5px;
+    padding: 2px 8px;
+    vertical-align: middle;
+    margin-left: 10px;
+    position: relative;
+    top: -4px;
+  }
+  .warn-banner{
+    margin: 12px 0 0 0;
+    font-size: 14px;
+    color: #8A3D28;
+    background: #FBEEE9;
+    border: 1px solid #E3AE9E;
+    border-radius: 8px;
+    padding: 10px 14px;
+    max-width: 68ch;
+    line-height: 1.5;
+  }
+
+  .diagnose{
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .diagnose h3{
+    font-family: var(--font-display);
+    font-size: 15px;
+    margin: 0 0 6px 0;
+    color: var(--ink);
+  }
+  .diagnose p.instructions{
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0 0 12px 0;
+    line-height: 1.55;
+  }
+  #diagnoseInput{
+    width: 100%;
+    min-height: 80px;
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    resize: vertical;
+  }
+  #diagnoseInput:focus{ outline: 2px solid color-mix(in srgb, var(--fluid1) 55%, transparent); outline-offset: 1px; }
+  .diagnose-actions{ display:flex; justify-content: flex-end; margin-top: 10px; }
+  #checkBtn{ background: var(--ink); color: #fff; }
+  #checkBtn:hover{ filter: brightness(1.15); }
+  #diagnoseFeedback{
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    display: none;
+  }
+  #diagnoseFeedback.correct{ display:block; background: #E4F3EA; color: #1E6B3E; border: 1px solid #A9D9BC; }
+  #diagnoseFeedback.incorrect{ display:block; background: #FBEEE9; color: #A6432A; border: 1px solid #E3AE9E; }
+
+  footer{
+    margin-top: 30px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    line-height: 1.6;
+    border-top: 1px solid var(--panel-border);
+    padding-top: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <h1>Diffusion Bench <span class="debug-tag">debug edition</span></h1>
+    <p class="tagline">A live look at Fick's laws: watch <em>Fluid 1</em> and <span class="f2">Fluid 2</span> even out along a tube, from the first instant to the final steady state.</p>
+    <p class="warn-banner">This build has one intentional error. Run the simulation and compare the concentration profile with what you actually expect to happen. Diagnose the error in the box near the bottom of the page.</p>
+  </header>
+
+  <div class="workbench">
+
+    <!-- CONTROL RAIL -->
+    <aside class="rail">
+
+      <div class="rail-group">
+        <span class="group-label">Fluid pair</span>
+        <select id="category"></select>
+        <div style="height:8px"></div>
+        <select id="pair"></select>
+        <div class="dcoef" id="dcoefDisplay"></div>
+      </div>
+
+      <div class="rail-group">
+        <span class="group-label">Boundary concentrations</span>
+        <div class="field-row">
+          <div class="field">
+            <label class="mini">C at Fluid 1 end, C_L (mol/L)</label>
+            <input type="number" id="cl" value="1.0" step="0.05" min="0">
+          </div>
+          <div class="field">
+            <label class="mini">C at Fluid 2 end, C_R (mol/L)</label>
+            <input type="number" id="cr" value="0.0" step="0.05" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="rail-group">
+        <span class="group-label">Tube geometry</span>
+        <div class="field-row">
+          <div class="field">
+            <label class="mini">Length, L (cm)</label>
+            <input type="number" id="length" value="10" step="0.1" min="0.1">
+          </div>
+          <div class="field">
+            <label class="mini">Area, A (cm²)</label>
+            <input type="number" id="area" value="5" step="0.1" min="0.01">
+          </div>
+        </div>
+      </div>
+
+      <div class="rail-group">
+        <span class="group-label">Simulation duration</span>
+        <div class="field-row">
+          <div class="field">
+            <input type="number" id="duration" value="90" step="1" min="0.001">
+          </div>
+          <div class="field">
+            <select id="durationUnit">
+              <option value="s">seconds</option>
+              <option value="min">minutes</option>
+              <option value="hr">hours</option>
+              <option value="day">days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail-group">
+        <span class="group-label">Colors</span>
+        <div class="field-row">
+          <div class="colorfield">
+            <input type="color" id="color1" value="#0e7c86">
+            <span>Fluid 1</span>
+          </div>
+          <div class="colorfield">
+            <input type="color" id="color2" value="#c97a2b">
+            <span>Fluid 2</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail-actions">
+        <button id="startBtn">Start simulation</button>
+        <button id="pauseBtn" disabled>Pause</button>
+        <button id="steadyBtn">Jump to steady state</button>
+      </div>
+
+      <div class="speed-row">
+        <label>Speed</label>
+        <select id="speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="5">5×</option>
+        </select>
+      </div>
+
+      <p class="rail-note">Adjust anything above, then press <strong>Start simulation</strong> to apply it. D values are representative literature values near 25 °C, 1 atm — treat them as order-of-magnitude teaching estimates.</p>
+    </aside>
+
+    <!-- STAGE -->
+    <main class="stage">
+
+      <div class="ampoule-wrap">
+        <p class="ampoule-title">Tube — live composition</p>
+        <div class="ampoule-shell">
+          <canvas id="tubeCanvas"></canvas>
+        </div>
+        <div class="ampoule-labels">
+          <span id="labelFluid1" style="color:#0e7c86">Fluid 1 end</span>
+          <span id="labelFluid2" style="color:#c97a2b">Fluid 2 end</span>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <p class="chart-title">Concentration profile, C(x, t)</p>
+        <canvas id="chartCanvas"></canvas>
+      </div>
+
+      <div class="lcd">
+        <div class="lcd-item"><span class="lcd-label">ELAPSED TIME</span><span class="lcd-value" id="readT">0 s</span></div>
+        <div class="lcd-item"><span class="lcd-label">FOURIER NUMBER, Fo</span><span class="lcd-value" id="readFo">0.000</span></div>
+        <div class="lcd-item"><span class="lcd-label">FLUX AT x=0</span><span class="lcd-value" id="readFlux">—</span></div>
+        <div class="lcd-item"><span class="lcd-label">MOLAR RATE, N·A</span><span class="lcd-value" id="readRate">—</span></div>
+        <div class="lcd-item"><span class="lcd-label">CUMULATIVE MOLES</span><span class="lcd-value" id="readCum">0 mol</span></div>
+        <div class="lcd-item"><span class="lcd-label">% OF STEADY FLUX</span><span class="lcd-value" id="readPct">0 %</span></div>
+      </div>
+
+      <div class="note">
+        <strong>Steady-state solution</strong>
+        Once the boundary concentrations have been held long enough, the profile stops changing and becomes linear:
+        <span class="formula" id="ssFormula">C_ss(x) = C_L + (C_R − C_L)·x/L</span>
+        which carries a constant flux
+        <span class="formula" id="ssFlux">N_ss = D·(C_L − C_R)/L</span>
+        This is the dashed line on the chart above. The characteristic times below tell you roughly how long the approach takes: <span id="tauNote">—</span>.
+      </div>
+
+      <div class="diagnose">
+        <h3>Diagnose the error</h3>
+        <p class="instructions">Run the simulation for a long duration (or press "Jump to steady state" and compare it against a real long run). Something in the code doesn't match the physics described above. What is it? Describe the error in your own words below.</p>
+        <textarea id="diagnoseInput" placeholder="e.g. describe what's wrong with one of the boundary conditions..."></textarea>
+        <div class="diagnose-actions">
+          <button id="checkBtn">Check answer</button>
+        </div>
+        <div id="diagnoseFeedback"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <footer>
+    Model: unsteady 1-D Fick diffusion, ∂C/∂t = D·∂²C/∂x², in a tube whose two ends are held at fixed concentrations C_L and C_R (e.g. two well-mixed reservoirs connected by a stagnant film or narrow capillary). The tube starts uniformly filled with the Fluid 2 concentration, and Fluid 1 diffuses in once contact begins at t = 0. Solved with an explicit finite-difference scheme, stepped live in your browser.
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Fluid database ----------
+  const FLUIDS = {
+    "gas-gas": {
+      label: "Gas – Gas",
+      suggestedL: 10, suggestedA: 5, suggestedDuration: 90, suggestedDurationUnit: "s",
+      pairs: {
+        "co2-n2":  { name: "CO₂ / N₂",   D: 0.160 },
+        "o2-n2":   { name: "O₂ / N₂",    D: 0.210 },
+        "h2-n2":   { name: "H₂ / N₂",    D: 0.784 },
+        "co2-air": { name: "CO₂ / Air",  D: 0.140 },
+        "he-air":  { name: "He / Air",   D: 0.720 },
+        "nh3-air": { name: "NH₃ / Air",  D: 0.280 }
+      }
+    },
+    "liquid-liquid": {
+      label: "Liquid – Liquid",
+      suggestedL: 2, suggestedA: 5, suggestedDuration: 12, suggestedDurationUnit: "hr",
+      pairs: {
+        "ethanol-water": { name: "Ethanol / Water",  D: 1.20e-5 },
+        "methanol-water":{ name: "Methanol / Water", D: 1.60e-5 },
+        "acetone-water": { name: "Acetone / Water",  D: 1.28e-5 },
+        "nacl-water":    { name: "NaCl(aq) / Water", D: 1.61e-5 },
+        "glucose-water": { name: "Glucose(aq) / Water", D: 0.69e-5 },
+        "sucrose-water": { name: "Sucrose(aq) / Water", D: 0.52e-5 }
+      }
+    },
+    "gas-liquid": {
+      label: "Gas dissolved in Liquid",
+      suggestedL: 2, suggestedA: 5, suggestedDuration: 10, suggestedDurationUnit: "hr",
+      pairs: {
+        "o2-water":  { name: "O₂(aq) in Water",  D: 2.10e-5 },
+        "co2-water": { name: "CO₂(aq) in Water", D: 1.92e-5 },
+        "n2-water":  { name: "N₂(aq) in Water",  D: 1.88e-5 },
+        "nh3-water": { name: "NH₃(aq) in Water", D: 1.64e-5 },
+        "h2-water":  { name: "H₂(aq) in Water",  D: 4.80e-5 }
+      }
+    }
+  };
+
+  const UNIT_SECONDS = { s: 1, min: 60, hr: 3600, day: 86400 };
+  const BASE_ANIM_SECONDS = 14; // real seconds to animate through a full run at 1x speed
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const categorySel = $("category"), pairSel = $("pair");
+  const clInput = $("cl"), crInput = $("cr");
+  const lengthInput = $("length"), areaInput = $("area");
+  const durationInput = $("duration"), durationUnitSel = $("durationUnit");
+  const color1Input = $("color1"), color2Input = $("color2");
+  const startBtn = $("startBtn"), pauseBtn = $("pauseBtn"), steadyBtn = $("steadyBtn");
+  const speedSel = $("speed");
+  const tubeCanvas = $("tubeCanvas"), chartCanvas = $("chartCanvas");
+
+  let state = null;
+  let playing = false;
+  let lastFrameTime = null;
+  let animHandle = null;
+
+  // ---------- setup dropdowns ----------
+  function populateCategories(){
+    categorySel.innerHTML = "";
+    Object.entries(FLUIDS).forEach(([key, val]) => {
+      const opt = document.createElement("option");
+      opt.value = key; opt.textContent = val.label;
+      categorySel.appendChild(opt);
+    });
+  }
+
+  function populatePairs(applyDefaults){
+    const cat = FLUIDS[categorySel.value];
+    pairSel.innerHTML = "";
+    Object.entries(cat.pairs).forEach(([key, val]) => {
+      const opt = document.createElement("option");
+      opt.value = key; opt.textContent = val.name;
+      pairSel.appendChild(opt);
+    });
+    if (applyDefaults){
+      lengthInput.value = cat.suggestedL;
+      areaInput.value = cat.suggestedA;
+      durationInput.value = cat.suggestedDuration;
+      durationUnitSel.value = cat.suggestedDurationUnit;
+    }
+    updateDDisplay();
+  }
+
+  function currentD(){
+    const cat = FLUIDS[categorySel.value];
+    return cat.pairs[pairSel.value].D;
+  }
+
+  function fmtSci(x, digits){
+    if (x === 0) return "0";
+    return x.toExponential(digits === undefined ? 2 : digits);
+  }
+
+  function updateDDisplay(){
+    const D = currentD();
+    $("dcoefDisplay").innerHTML =
+      "D = " + fmtSci(D) + " cm²/s &nbsp;&nbsp;(" + fmtSci(D * 1e-4) + " m²/s)";
+  }
+
+  function updateLabels(){
+    $("labelFluid1").textContent = "Fluid 1 end (C_L)";
+    $("labelFluid2").textContent = "Fluid 2 end (C_R)";
+    $("labelFluid1").style.color = color1Input.value;
+    $("labelFluid2").style.color = color2Input.value;
+  }
+
+  // ---------- time formatting ----------
+  function formatTime(s){
+    if (!isFinite(s)) return "—";
+    if (s < 120) return s.toFixed(2) + " s";
+    if (s < 7200) return (s / 60).toFixed(2) + " min";
+    if (s < 172800) return (s / 3600).toFixed(2) + " hr";
+    return (s / 86400).toFixed(2) + " day";
+  }
+
+  // ---------- color interpolation ----------
+  function hexToRgb(hex){
+    hex = hex.replace("#", "");
+    const n = parseInt(hex, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function lerpColorStr(hex1, hex2, t){
+    t = Math.max(0, Math.min(1, t));
+    const a = hexToRgb(hex1), b = hexToRgb(hex2);
+    const r = Math.round(a[0] + (b[0] - a[0]) * t);
+    const g = Math.round(a[1] + (b[1] - a[1]) * t);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+    return "rgb(" + r + "," + g + "," + bl + ")";
+  }
+
+  // ---------- simulation core ----------
+  function initSim(){
+    const D = currentD();
+    const L = parseFloat(lengthInput.value);
+    const A = parseFloat(areaInput.value);
+    const CL = parseFloat(clInput.value);
+    const CR = parseFloat(crInput.value);
+    const totalT = parseFloat(durationInput.value) * UNIT_SECONDS[durationUnitSel.value];
+
+    if (!(D > 0) || !(L > 0) || !(A > 0) || !(totalT > 0) || isNaN(CL) || isNaN(CR)){
+      alert("Please check your inputs — length, area and duration must be positive numbers.");
+      return false;
+    }
+
+    let N = 121;
+    let dx = L / (N - 1);
+    let dtMax = 0.5 * dx * dx / D;
+    let steps = Math.ceil(totalT / dtMax);
+    while (steps > 200000 && N > 21){
+      N = Math.max(21, Math.floor(N * 0.7));
+      dx = L / (N - 1);
+      dtMax = 0.5 * dx * dx / D;
+      steps = Math.ceil(totalT / dtMax);
+    }
+    steps = Math.max(steps, 1);
+    const dt = totalT / steps;
+
+    const C = new Float64Array(N).fill(CR);
+    C[0] = CL; C[N - 1] = CR;
+
+    state = {
+      D, L, A, CL, CR, totalT, N, dx, dt, steps,
+      C, t: 0, currentStep: 0, cumMoles: 0,
+      lastFlux: 0, lastMolarRate: 0
+    };
+    return true;
+  }
+
+  function stepOnce(){
+    const { N, C, dx, dt, D, CL, CR, A } = state;
+    const Cnew = new Float64Array(N);
+    const r = D * dt / (dx * dx);
+    // left boundary: fixed concentration C_L (correct)
+    Cnew[0] = CL;
+    // right boundary: *** BUG *** this mirrors the interior node instead of
+    // pinning the concentration to C_R, which imposes a zero-flux (insulated)
+    // condition, dC/dx = 0, at x = L instead of the fixed C_R the rest of the
+    // app assumes.
+    Cnew[N - 1] = C[N - 1] + 2 * r * (C[N - 2] - C[N - 1]);
+    for (let i = 1; i < N - 1; i++){
+      Cnew[i] = C[i] + r * (C[i + 1] - 2 * C[i] + C[i - 1]);
+    }
+    state.C = Cnew;
+    state.t += dt;
+    state.currentStep++;
+
+    // one-sided 2nd order derivative at x = 0, converting mol/L -> mol/cm^3 (divide by 1000)
+    const dCdx0 = (-3 * Cnew[0] + 4 * Cnew[1] - Cnew[2]) / (2 * dx);
+    const flux = -D * (dCdx0 / 1000); // mol/(cm^2 s)
+    const rate = flux * A; // mol/s
+    state.lastFlux = flux;
+    state.lastMolarRate = rate;
+    state.cumMoles += rate * dt;
+  }
+
+  function jumpToSteady(){
+    if (!state) { if (!initSim()) return; }
+    playing = false; updatePlayUI();
+    const { N, L, CL, CR, dx, D, A } = state;
+    const C = new Float64Array(N);
+    for (let i = 0; i < N; i++){
+      const x = i * dx;
+      C[i] = CL + (CR - CL) * x / L;
+    }
+    state.C = C;
+    state.t = state.totalT;
+    state.currentStep = state.steps;
+    const dCdx = (CR - CL) / L;
+    state.lastFlux = -D * (dCdx / 1000);
+    state.lastMolarRate = state.lastFlux * A;
+    drawAll();
+  }
+
+  // ---------- drawing ----------
+  function sizeCanvas(canvas){
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width));
+    const h = Math.max(1, Math.round(rect.height));
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr){
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+
+  function drawTube(){
+    const { ctx, w, h } = sizeCanvas(tubeCanvas);
+    ctx.clearRect(0, 0, w, h);
+    if (!state){ ctx.fillStyle = "#eee"; ctx.fillRect(0, 0, w, h); return; }
+
+    const { C, N, CL, CR } = state;
+    const col1 = color1Input.value, col2 = color2Input.value;
+    const denom = (CL - CR) === 0 ? 1 : (CL - CR);
+
+    const cols = Math.max(1, Math.floor(w));
+    for (let px = 0; px < cols; px++){
+      const xFrac = px / (cols - 1 || 1);
+      const gridPos = xFrac * (N - 1);
+      const i0 = Math.floor(gridPos);
+      const i1 = Math.min(i0 + 1, N - 1);
+      const wgt = gridPos - i0;
+      const val = C[i0] * (1 - wgt) + C[i1] * wgt;
+      const frac1 = (val - CR) / denom;
+      ctx.fillStyle = lerpColorStr(col2, col1, frac1);
+      ctx.fillRect(px, 0, 1.5, h);
+    }
+    // subtle glass highlight
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "rgba(255,255,255,0.30)");
+    grad.addColorStop(0.35, "rgba(255,255,255,0.05)");
+    grad.addColorStop(1, "rgba(0,0,0,0.10)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  function niceCeil(v){
+    if (v <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(v)));
+    const norm = v / mag;
+    let n;
+    if (norm <= 1) n = 1; else if (norm <= 2) n = 2; else if (norm <= 5) n = 5; else n = 10;
+    return n * mag;
+  }
+
+  function drawChart(){
+    const { ctx, w, h } = sizeCanvas(chartCanvas);
+    ctx.clearRect(0, 0, w, h);
+
+    const padL = 54, padR = 16, padT = 14, padB = 34;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+
+    ctx.fillStyle = "#8A9A93";
+    ctx.font = "12px " + getComputedStyle(document.body).fontFamily;
+
+    if (!state){
+      ctx.fillText("Press \"Start simulation\" to begin.", padL, padT + plotH / 2);
+      return;
+    }
+
+    const { C, N, L, CL, CR, t, totalT } = state;
+    const yMax = niceCeil(Math.max(CL, CR) * 1.15 || 1);
+    const yMin = 0;
+
+    const xToPx = (x) => padL + (x / L) * plotW;
+    const yToPx = (y) => padT + plotH - ((y - yMin) / (yMax - yMin)) * plotH;
+
+    // gridlines + y ticks
+    ctx.strokeStyle = "#E3E9E6";
+    ctx.lineWidth = 1;
+    const yTicks = 5;
+    ctx.fillStyle = "#8A9A93";
+    for (let i = 0; i <= yTicks; i++){
+      const yv = yMin + (yMax - yMin) * i / yTicks;
+      const py = yToPx(yv);
+      ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(padL + plotW, py); ctx.stroke();
+      ctx.fillText(yv.toFixed(2), 6, py + 4);
+    }
+    // x ticks
+    const xTicks = 5;
+    for (let i = 0; i <= xTicks; i++){
+      const xv = L * i / xTicks;
+      const px = xToPx(xv);
+      ctx.fillText(xv.toFixed(1), px - 8, h - 10);
+    }
+    ctx.fillStyle = "#52625C";
+    ctx.fillText("Position along tube, x (cm)", padL + plotW / 2 - 60, h - 1);
+    ctx.save();
+    ctx.translate(12, padT + plotH / 2 + 30);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("Concentration (mol/L)", 0, 0);
+    ctx.restore();
+
+    // initial condition (t=0 reference), faint dotted
+    ctx.strokeStyle = "#B9C2BE";
+    ctx.setLineDash([2, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(xToPx(0), yToPx(CL));
+    ctx.lineTo(xToPx(1e-9), yToPx(CR));
+    ctx.lineTo(xToPx(L), yToPx(CR));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // steady-state line (dashed, neutral)
+    ctx.strokeStyle = "#7C8B85";
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 1.75;
+    ctx.beginPath();
+    ctx.moveTo(xToPx(0), yToPx(CL));
+    ctx.lineTo(xToPx(L), yToPx(CR));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // current profile, stroked with a left->right gradient matching the two fluid colors
+    const lg = ctx.createLinearGradient(xToPx(0), 0, xToPx(L), 0);
+    lg.addColorStop(0, color1Input.value);
+    lg.addColorStop(1, color2Input.value);
+    ctx.strokeStyle = lg;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++){
+      const x = i * (L / (N - 1));
+      const px = xToPx(x), py = yToPx(C[i]);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // legend
+    const legendY = padT + 4;
+    ctx.fillStyle = "#7C8B85";
+    ctx.fillRect(padL + plotW - 150, legendY - 8, 14, 3);
+    ctx.fillText("steady state", padL + plotW - 130, legendY - 2);
+    ctx.strokeStyle = "#B9C2BE";
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(padL + plotW - 150, legendY + 10); ctx.lineTo(padL + plotW - 136, legendY + 10); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#8A9A93";
+    ctx.fillText("t = 0", padL + plotW - 130, legendY + 14);
+
+    // time badge
+    ctx.fillStyle = "#16221E";
+    ctx.font = "bold 13px " + getComputedStyle(document.body).fontFamily;
+    const pct = totalT > 0 ? Math.min(100, (t / totalT) * 100) : 0;
+    ctx.fillText("t = " + formatTime(t) + "  (" + pct.toFixed(0) + "% of run)", padL, padT - 2);
+  }
+
+  function updateReadout(){
+    if (!state){
+      $("readT").textContent = "0 s";
+      $("readFo").textContent = "0.000";
+      $("readFlux").textContent = "—";
+      $("readRate").textContent = "—";
+      $("readCum").textContent = "0 mol";
+      $("readPct").textContent = "0 %";
+      $("ssFlux").textContent = "N_ss = D·(C_L − C_R)/L";
+      $("tauNote").textContent = "—";
+      return;
+    }
+    const { D, L, CL, CR, t, A } = state;
+    const Fo = D * t / (L * L);
+    const steadyFlux = -D * ((CR - CL) / L) / 1000; // mol/(cm^2 s)
+    const steadyRate = steadyFlux * A;
+    const pctOfSteady = steadyFlux !== 0 ? Math.min(999, (state.lastFlux / steadyFlux) * 100) : 0;
+
+    $("readT").textContent = formatTime(t);
+    $("readFo").textContent = Fo.toFixed(4);
+    $("readFlux").textContent = fmtSci(state.lastFlux) + " mol/(cm²·s)";
+    $("readRate").textContent = fmtSci(state.lastMolarRate) + " mol/s";
+    $("readCum").textContent = fmtSci(state.cumMoles) + " mol";
+    $("readPct").textContent = pctOfSteady.toFixed(1) + " %";
+
+    $("ssFlux").textContent = "N_ss = D·(C_L − C_R)/L  =  " + fmtSci(steadyFlux) + " mol/(cm²·s)   →   N_ss·A = " + fmtSci(steadyRate) + " mol/s";
+
+    const tau = (L * L) / (Math.PI * Math.PI * D);
+    const t95 = 0.304 * L * L / D;
+    $("tauNote").textContent = "time constant τ ≈ " + formatTime(tau) + ", ~95% of the way there by t ≈ " + formatTime(t95);
+  }
+
+  function drawAll(){
+    drawTube();
+    drawChart();
+    updateReadout();
+  }
+
+  // ---------- play / pause / animation ----------
+  function updatePlayUI(){
+    pauseBtn.disabled = !state;
+    pauseBtn.textContent = playing ? "Pause" : "Resume";
+    startBtn.textContent = state ? "Restart simulation" : "Start simulation";
+  }
+
+  function animate(now){
+    if (!playing) return;
+    if (lastFrameTime === null) lastFrameTime = now;
+    const dtReal = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
+
+    const speed = parseFloat(speedSel.value);
+    const simDelta = dtReal * speed * (state.totalT / BASE_ANIM_SECONDS);
+    let stepsToDo = Math.round(simDelta / state.dt);
+    stepsToDo = Math.max(0, Math.min(stepsToDo, state.steps - state.currentStep));
+    const cap = 20000;
+    const doNow = Math.min(stepsToDo, cap);
+    for (let i = 0; i < doNow; i++) stepOnce();
+
+    drawAll();
+
+    if (state.currentStep >= state.steps){
+      playing = false;
+      updatePlayUI();
+      return;
+    }
+    animHandle = requestAnimationFrame(animate);
+  }
+
+  startBtn.addEventListener("click", () => {
+    if (!initSim()) return;
+    playing = true;
+    lastFrameTime = null;
+    updatePlayUI();
+    drawAll();
+    if (animHandle) cancelAnimationFrame(animHandle);
+    animHandle = requestAnimationFrame(animate);
+  });
+
+  pauseBtn.addEventListener("click", () => {
+    if (!state) return;
+    playing = !playing;
+    updatePlayUI();
+    if (playing){
+      lastFrameTime = null;
+      animHandle = requestAnimationFrame(animate);
+    }
+  });
+
+  steadyBtn.addEventListener("click", jumpToSteady);
+
+  categorySel.addEventListener("change", () => populatePairs(true));
+  pairSel.addEventListener("change", updateDDisplay);
+  color1Input.addEventListener("input", () => { updateLabels(); drawAll(); });
+  color2Input.addEventListener("input", () => { updateLabels(); drawAll(); });
+
+  window.addEventListener("resize", () => { if (!playing) drawAll(); });
+
+  // ---------- diagnose-the-error check ----------
+  function checkDiagnosis(){
+    const raw = ($("diagnoseInput").value || "").toLowerCase();
+    const feedback = $("diagnoseFeedback");
+
+    const fluxTerms = [
+      "zero flux", "zero-flux", "no flux", "no-flux", "insulated", "neumann",
+      "closed end", "sealed end", "sealed off", "reflecting", "dc/dx = 0",
+      "dc/dx=0", "d c/d x = 0", "derivative is zero", "gradient is zero",
+      "gradient of zero", "slope of zero", "slope is zero"
+    ];
+    const rightEndTerms = [
+      "right end", "right boundary", "right side", "x = l", "x=l", "c_r",
+      "cr boundary", "far end", "other end", "end of the tube", "second boundary",
+      "far side", "opposite end", "last node", "last grid point"
+    ];
+
+    const hasFluxTerm = fluxTerms.some((t) => raw.includes(t));
+    const hasRightEndTerm = rightEndTerms.some((t) => raw.includes(t));
+
+    feedback.classList.remove("correct", "incorrect");
+    if (raw.trim().length === 0){
+      feedback.classList.add("incorrect");
+      feedback.textContent = "Try again!";
+      return;
+    }
+
+    if (hasFluxTerm && hasRightEndTerm){
+      feedback.classList.add("correct");
+      feedback.textContent = "Well done! You correctly identified the error!";
+    } else {
+      feedback.classList.add("incorrect");
+      feedback.textContent = "Try again!";
+    }
+  }
+
+  $("checkBtn").addEventListener("click", checkDiagnosis);
+
+  // ---------- init ----------
+  populateCategories();
+  populatePairs(true);
+  updateLabels();
+  drawAll();
+})();
+</script>
+</body>
+</html>
